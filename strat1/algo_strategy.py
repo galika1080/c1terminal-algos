@@ -64,7 +64,9 @@ class AlgoStrategy(gamelib.AlgoCore):
 
 
         holes = self.find_holes(game_state)
-        gamelib.debug_write(holes)
+        #gamelib.debug_write(holes)
+
+        self.simulate_unit_journey(game_state, (12, 12), "NE")
 
         self.starter_strategy(game_state)
 
@@ -99,7 +101,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     '''
     def simulate_unit_journey(self, game_state, startpos, edge="NE"):
         path = self.fast_astar(game_state, startpos, edge)
-
+        gamelib.debug_write(path)
 
 
     '''
@@ -114,6 +116,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     cost estimate heuristic for pathfinding
     '''
     def fastheuristic(self, p, edge):
+        
         if edge == "NE":
             return 41 - (p[0] + p[1])
         
@@ -131,24 +134,24 @@ class AlgoStrategy(gamelib.AlgoCore):
     '''
     get candidates
     '''
-    def get_candidates(self, game_state, pos):
+    def get_candidates(self, game_state, pos, last_vert=False):
         res = []
 
         atmpt = (pos[0] + 1, pos[1])
-        if game_state.contains_stationary_unit(atmpt):
-            res.append(atmpt)
+        if not game_state.contains_stationary_unit(atmpt):
+            res.append((atmpt, 0.25 if last_vert else -0.25))
         
         atmpt = (pos[0] - 1, pos[1])
-        if game_state.contains_stationary_unit(atmpt):
-            res.append(atmpt)
+        if not game_state.contains_stationary_unit(atmpt):
+            res.append((atmpt, 0.25 if last_vert else -0.25))
         
         atmpt = (pos[0], pos[1] + 1)
-        if game_state.contains_stationary_unit(atmpt):
-            res.append(atmpt)
+        if not game_state.contains_stationary_unit(atmpt):
+            res.append((atmpt, 0.25 if not last_vert else -0.25))
         
         atmpt = (pos[0], pos[1] - 1)
-        if game_state.contains_stationary_unit(atmpt):
-            res.append(atmpt)
+        if not game_state.contains_stationary_unit(atmpt):
+            res.append((atmpt, 0.25 if not last_vert else -0.25))
 
         return res
 
@@ -158,13 +161,13 @@ class AlgoStrategy(gamelib.AlgoCore):
     '''
     def fast_astar(self, game_state, start=(14, 14), edge="NE"):
 
-        start = (start[0], start[1], [])
+        start = (start[0], start[1])
 
-        queue = [(fastheuristic(start, edge), start)]     # (int cost_estimate, (int x, int y, [(int goal_x, int goal_y), ... ] ) )
+        queue = [(self.fastheuristic(start, edge), start)]     # (int cost_estimate, (int x, int y, [(int goal_x, int goal_y), ... ] ) )
         visited = [start]   # (int x, int y, [(int goal_x, int goal_y), ... ] )
 
         states = {
-            str(start) : (-1, -1, 0)
+            str(start) : ((-1, -1), 0)
         } # str((int x, int y)) : ((int x, int y, [(int goal_x, int goal_y), ... ] ), int cost_so_far)
 
         best = ()  # we'll put the best path here. (int x, int y, [(int goal_x, int goal_y), ... ] )
@@ -180,17 +183,20 @@ class AlgoStrategy(gamelib.AlgoCore):
             #print(str(temp))
             #print("Current state: " + str(current) + " ... " + str(currentcost))
 
-            if fastheuristic((current[0], current[1]), edge) == 0:  # we're at the target edge, apparently
-                break
-            
-            candidates = get_candidates(game_state, current)
+            if self.fastheuristic((current[0], current[1]), edge) < 1:  # we're at the target edge, apparently
+                best = (current[0], current[1])
+                break            
+
+            candidates = self.get_candidates(game_state, current, states[str(current)][0][0] == current[0] )
 
             for candidate in candidates:
                 #print("  " + str(candidate))
+                zigzag_bonus = candidate[1]
+                candidate = candidate[0]
 
-                cost_estimate = 2*fastheuristic(candidate, edge) + currentcost+1  # calculate the estimated total cost of this path
+                cost_estimate = 2*self.fastheuristic(candidate, edge) + (currentcost+1) - zigzag_bonus  # calculate the estimated total cost of this path
 
-                #print("    cost estimate: " + str(cost_estimate))
+
                 if not candidate in visited: # if we've never seen this state before...
                     heapq.heappush(queue, (cost_estimate, candidate))  # queue up the state, ordered by total estimated cost
                     visited.append(candidate)                                               # record having seen it
@@ -205,9 +211,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         solution = [] # we will build a list of points here
 
         if best != ():
-            current = best  # (int x, int y, [(int goal_x, int goal_y), ... ] )
-            while current != (start[0], start[1], []):
-                solution.insert(0, (current[0], current[1]))
+
+            current = best  # (int x, int y)
+            while current != start:
+                solution.insert(0, current )
                 #print("Backtracking on " + str(current))
 
                 current = states[str(current)][0]
@@ -402,9 +409,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             # When parsing the frame data directly, 
             # 1 is integer for yourself, 2 is opponent (StarterKit code uses 0, 1 as player_index instead)
             if not unit_owner_self:
-                gamelib.debug_write("Got scored on at: {}".format(location))
+                #gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
-                gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
+                #gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
 
 if __name__ == "__main__":
