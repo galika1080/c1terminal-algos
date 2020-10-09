@@ -1,9 +1,11 @@
+#import strat1.gamelib as gamelib
 import gamelib
 import random
 import math
 import warnings
 from sys import maxsize
 import json
+import heapq
 
 
 """
@@ -44,14 +46,15 @@ class AlgoStrategy(gamelib.AlgoCore):
         # This is a good place to do initial setup
         self.scored_on_locations = []
 
+
+    """
+    This function is called every turn with the game state wrapper as
+    an argument. The wrapper stores the state of the arena and has methods
+    for querying its state, allocating your current resources as planned
+    unit deployments, and transmitting your intended deployments to the
+    game engine.
+    """
     def on_turn(self, turn_state):
-        """
-        This function is called every turn with the game state wrapper as
-        an argument. The wrapper stores the state of the arena and has methods
-        for querying its state, allocating your current resources as planned
-        unit deployments, and transmitting your intended deployments to the
-        game engine.
-        """
         game_state = gamelib.GameState(self.config, turn_state)
 
         game_state.attempt_spawn(SCOUT, [24, 10], 3) 
@@ -59,9 +62,177 @@ class AlgoStrategy(gamelib.AlgoCore):
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
+
+        holes = self.find_holes(game_state)
+        gamelib.debug_write(holes)
+
         self.starter_strategy(game_state)
 
         game_state.submit_turn()
+
+    '''
+    a dumb function that reports any spots on our edges without walls on them
+    may be useful for determining where we can spawn troops
+    '''
+    def find_holes(self, game_state, y_range=[0, 14], side=0):
+        #game_state.contains_stationary_unit()
+        
+        holes = []
+
+        if side == 0 or side == 1:
+            for i in range(y_range[0], y_range[1]): # iterate through the interval of y values
+                loc = [14 + i, i]
+                if not game_state.contains_stationary_unit(loc):
+                    holes.append(loc)
+        
+        if side == 0 or side == -1:
+            for i in range(y_range[0], y_range[1]): # iterate through the interval of y values
+                loc = [13 - i, i]
+                if not game_state.contains_stationary_unit(loc):
+                    holes.append(loc)
+
+        return holes
+
+    '''
+    figures out (approximately) what path a unit would take, then calculates how much damage it would take along the way.
+    only simulates structure damage. all units assumed to be a scout, because they are the hardest to kill due to speed.
+    '''
+    def simulate_unit_journey(self, game_state, startpos, edge="NE"):
+        path = self.fast_astar(game_state, startpos, edge)
+
+
+
+    '''
+    gives the maximum total damage we'd have to deal to eliminate all mobile troops,
+    assuming the enemy uses all their available points
+    '''
+    def max_onslaught(self, game_state):
+        res = game_state.get_resource(1, 1)
+        return res * 15
+
+    '''
+    cost estimate heuristic for pathfinding
+    '''
+    def fastheuristic(self, p, edge):
+        if edge == "NE":
+            return 41 - (p[0] + p[1])
+        
+        if edge == "SW":
+            return 13 - (p[0] + p[1])
+        
+        if edge == "NW":
+            return 14 - (p[1] - p[0])
+        
+        if edge == "SW":
+            return -13 - (p[1] - p[0])
+        
+        return 0
+
+    '''
+    get candidates
+    '''
+    def get_candidates(self, game_state, pos):
+        res = []
+
+        atmpt = (pos[0] + 1, pos[1])
+        if game_state.contains_stationary_unit(atmpt):
+            res.append(atmpt)
+        
+        atmpt = (pos[0] - 1, pos[1])
+        if game_state.contains_stationary_unit(atmpt):
+            res.append(atmpt)
+        
+        atmpt = (pos[0], pos[1] + 1)
+        if game_state.contains_stationary_unit(atmpt):
+            res.append(atmpt)
+        
+        atmpt = (pos[0], pos[1] - 1)
+        if game_state.contains_stationary_unit(atmpt):
+            res.append(atmpt)
+
+        return res
+
+    '''
+    greedy best-first search, should run pretty quick
+    specify edge as NE, NW, SE, or SW (look at a compass)
+    '''
+    def fast_astar(self, game_state, start=(14, 14), edge="NE"):
+
+        start = (start[0], start[1], [])
+
+        queue = [(fastheuristic(start, edge), start)]     # (int cost_estimate, (int x, int y, [(int goal_x, int goal_y), ... ] ) )
+        visited = [start]   # (int x, int y, [(int goal_x, int goal_y), ... ] )
+
+        states = {
+            str(start) : (-1, -1, 0)
+        } # str((int x, int y)) : ((int x, int y, [(int goal_x, int goal_y), ... ] ), int cost_so_far)
+
+        best = ()  # we'll put the best path here. (int x, int y, [(int goal_x, int goal_y), ... ] )
+
+        largestNumGoals = 0
+        while len(queue) > 0:
+
+            temp = heapq.heappop(queue)
+            current = temp[1]
+            
+            currentcost = states[str(current)][1]   # gives us int cost_so_far
+
+            #print(str(temp))
+            #print("Current state: " + str(current) + " ... " + str(currentcost))
+
+            if fastheuristic((current[0], current[1]), edge) == 0:  # we're at the target edge, apparently
+                break
+            
+            candidates = get_candidates(game_state, current)
+
+            for candidate in candidates:
+                #print("  " + str(candidate))
+
+                cost_estimate = 2*fastheuristic(candidate, edge) + currentcost+1  # calculate the estimated total cost of this path
+
+                #print("    cost estimate: " + str(cost_estimate))
+                if not candidate in visited: # if we've never seen this state before...
+                    heapq.heappush(queue, (cost_estimate, candidate))  # queue up the state, ordered by total estimated cost
+                    visited.append(candidate)                                               # record having seen it
+                    states[str(candidate)] = (current, currentcost + 1)      # record predecessor and cost to the state
+
+                elif currentcost+1 < states[str(candidate)][1]: # if we've seen it but we found a better path...
+                    heapq.heappush(queue, (cost_estimate, candidate))  # queue up improved path
+                    states[str(candidate)] = (current, currentcost + 1)  # record improved predecessor and cost
+
+        # backtracking time
+
+        solution = [] # we will build a list of points here
+
+        if best != ():
+            current = best  # (int x, int y, [(int goal_x, int goal_y), ... ] )
+            while current != (start[0], start[1], []):
+                solution.insert(0, (current[0], current[1]))
+                #print("Backtracking on " + str(current))
+
+                current = states[str(current)][0]
+        
+        solution.insert(0, start)
+
+        return solution
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     """
