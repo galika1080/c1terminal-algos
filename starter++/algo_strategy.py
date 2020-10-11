@@ -83,20 +83,49 @@ class AlgoStrategy(gamelib.AlgoCore):
             else:
                 self.build_init_defence2(game_state)
 
+        ### RUDIMENTARY ATTACKING STRATEGY
         if game_state.turn_number % 3 == 1:
             if self.attack_close_scouts_all(game_state) == 1:
                 self.clear_w_demolishers(game_state)
+                # throw out scouts anyways
+                scout_spawn_location_options = [[13, 0], [14, 0]]
+                best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                game_state.attempt_spawn(SCOUT, best_location, 1000)
         else:
             if game_state.turn_number % 3 == 2:
                 self.clear_w_demolishers(game_state)
+        ###################
 
+        ### BUILDING REACTIVE DEFENCES EACH ROUND
         if game_state.turn_number % 5 == 0:
             self.my_build_reactive_defense_w_mirror(game_state)
         else:
             self.my_build_reactive_defense(game_state)
+        ###################
+
+        ### BUILD FRONT LINE:
+        if game_state.turn_number % 2 == 0:
+            sp = game_state.get_resource(SP)
+            # if on a turn when we build factory focus on 
+            # building as many turrets/walls while still having enough for a factory
+            if sp >= 12 and game_state.turn_number % 4 == 0:
+                while sp >= 12:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+            else:
+                while sp > 0:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
             
+        ### FACTORY BUILDING/UPGRADE 
         if game_state.turn_number == 2 or game_state.turn_number % 4 == 0:
-            factory_locations = [[13, 0], [14, 0], [13, 1], [14, 1], [13, 2], [14, 2], [13, 3], [14, 3]]
+            factory_locations = [[13, 0], [14, 0], [12, 1], [13, 1], [14, 1], [15, 1], [11, 2], [12, 2], [13, 2], [14, 2], [15, 2], [16, 2], [10, 3], [11, 3], [12, 3], [14, 3], [15, 3], [16,3], [17,3], [18,3], [9, 4], [10, 4], [11, 4], [12, 4], [14, 4], [15, 4], [16,4], [17,4], [18,4], [19,4]]
             spawned = False
             for location in factory_locations:
                 if game_state.attempt_spawn(FACTORY, location):
@@ -106,7 +135,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                 for location in factory_locations:
                     if game_state.attempt_upgrade(location):
                         break
-
 
     # have one version then a mirrored version too
     def build_init_defence1(self, game_state):
@@ -165,7 +193,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         # close point
         close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
         attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
+        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, game_state.type_cost(SCOUT)[MP]*int(game_state.get_resource(MP)/game_state.get_resource(SP)))
 
         if options == 0:    
             game_state.attempt_spawn(SCOUT, best_location, 1000)
@@ -184,7 +212,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         # close point
         close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
         attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
+        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, game_state.type_cost(DEMOLISHER)[MP]*3)
     
         game_state.attempt_spawn(DEMOLISHER, best_location, 1000)
 
@@ -310,6 +338,20 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Now just return the location that takes the least damage
         return location_options[damages.index(min(damages))]
 
+    def build_one_front_line(self, game_state, seed):
+        # fill from the edges
+        if seed == 2:
+            for i in range(3, 13):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
+        else:
+            for i in range(27, 13, -1):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
 
 ################################################
     def starter_strategy(self, game_state):
