@@ -8,6 +8,8 @@ import json
 import heapq
 from heapq import nsmallest
 
+import time
+
 
 """
 Most of the algo code you write will be in this file unless you create new
@@ -27,13 +29,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         super().__init__()
         seed = random.randrange(maxsize)
         random.seed(seed)
-        gamelib.debug_write('Random seed: {}'.format(seed))
+        #gamelib.debug_write('Random seed: {}'.format(seed))
 
     def on_game_start(self, config):
         """
         Read in config and perform any initial setup here 
         """
-        gamelib.debug_write('Configuring your custom algo strategy...')
+        #gamelib.debug_write('Configuring your custom algo strategy...')
         self.config = config
         global WALL, FACTORY, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP
         WALL = config["unitInformation"][0]["shorthand"]
@@ -58,11 +60,12 @@ class AlgoStrategy(gamelib.AlgoCore):
     def on_turn(self, turn_state):
         game_state = gamelib.GameState(self.config, turn_state)
 
-        #if game_state.turn_number == 0:
-        #    ...
-        #    self.initial_defense(game_state)
+        if game_state.turn_number == 0:
+            ...
+            #self.initial_defense(game_state)
 
-        gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
+        gamelib.debug_write('################## Performing turn {} of your custom algo strategy#######################'.format(game_state.turn_number))
+        
         game_state.suppress_warnings(True)  # Comment or remove this line to enable warnings.
 
 
@@ -79,36 +82,79 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     def find_deficit(self, game_state):
         holes_enemy_e = self.find_holes_enemy(game_state, y_range=[15, 28], side="E")
-        holes_enemy_w = self.find_holes(game_state, y_range=[15, 28], side="W")
+        holes_enemy_w = self.find_holes_enemy(game_state, y_range=[15, 28], side="W")
         
-        damage_goal = self.max_onslaught(game_state)
+        damage_goal = self.max_onslaught(game_state) + 20
 
-        gamelib.debug_write("_max onslaught: " + str(damage_goal))
+        #gamelib.debug_write("_max onslaught: " + str(damage_goal))
         
 
-        possibilities = []  # will store (path_length, (path_damage, path)) ordered by path_length
-        
+        possibilities = []  # will store (path_damage, path)ordered by path_length
+        #possibilities_w = []
+
+        exclude_e = [] # stores points that have paths going through them, so we can ignore future paths that end up being basically the same
+        exclude_w = []
+
+        excluded = 0
 
         for h in holes_enemy_e:
-            p = self.simulate_unit_journey(game_state, h, "SW") # they target the opposite edge
-            heapq.heappush(possibilities, (len(p[1]), p))
+            p = (self.simulate_unit_journey(game_state, h, edge="SW", exclude=exclude_e), "SW") # they target the opposite edge
+            if p[0] != None:
+                exclude_e += p[0][1]   # add all the points on the path to exclusions
+
+                if p[0][0] < damage_goal:
+                    possibilities.append(p)
+            
+            else: excluded += 1
         
         for h in holes_enemy_w:
-            p = self.simulate_unit_journey(game_state, h, "SE")
-            heapq.heappush(possibilities, (len(p[1]), p))   
+            p = (self.simulate_unit_journey(game_state, h, edge="SE", exclude=exclude_w), "SE")
+            if p[0] != None:
+                exclude_w += p[0][1]   # add all the points on the path to exclusions
+
+                if p[0][0] < damage_goal:
+                    possibilities.append(p)
+
+            else: excluded += 1
         
+        possibilities.sort()
+
+        gamelib.debug_write("identified " + str(len(possibilities)) + " sufficiently unique paths")
+        gamelib.debug_write("excluded " + str(excluded) + " similar paths")
+        
+
         res = game_state.get_resource(0, 0)
 
-        split = res / len(possibilities)
+        split = res / max(1, len(possibilities))
+
+        if len(possibilities) == 0:
+            gamelib.debug_write("NO DEFICITS FOUND!")
+            
 
         while len(possibilities) != 0:
-            p = heapq.heappop(possibilities)
+            p = possibilities.pop(0)
+            
+            self.reinforce(game_state, p[0][1], damage_goal - p[0][0], p[0][2], cost_allocation=split)
 
-            gamelib.debug_write("___path length: " + str(p[0]))
+            for path in possibilities:
+                og = path[0][0]
+                gamelib.debug_write("recalculating a path...")
+                path = (self.simulate_unit_journey(game_state, path[0][1][0], edge=path[1]), path[1])
+                newdmg = path[0][0]
 
-            if p[1][0] < damage_goal:
-                gamelib.debug_write("____deficit found: " + str(p[1][0]) + " is less than " + str(damage_goal))
-                self.reinforce(game_state, p[1][1], damage_goal - p[1][0], p[1][2], cost_allocation=split)
+                possibilities.sort()
+
+                gamelib.debug_write("old dmg: " + str(og) + "; new dmg: " + str(newdmg))
+
+                if game_state.get_resource(0, 0) < 1:
+                    gamelib.debug_write("out of resource!! still had " + str(len(possibilities)) + " items in queue")
+                    return
+
+            #gamelib.debug_write("___path length: " + str(p[0]))
+
+            #if p[1][0] < damage_goal:
+                #gamelib.debug_write("____deficit found: " + str(p[1][0]) + " is less than " + str(damage_goal))
+                #self.reinforce(game_state, p[1][1], damage_goal - p[1][0], p[1][2], cost_allocation=split)
 
     def reinforce(self, game_state, path, deficit, turrets, cost_allocation=100000):
         IMPACT_MARGIN = 3
@@ -119,34 +165,69 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         gamelib.debug_write("____attempting to fix deficit of " + str(deficit))
         res = game_state.get_resource(0, 0)
-        gamelib.debug_write("_____resource available: " + str(res))
+        gamelib.debug_write("_____resource available: " + str(cost_allocation))
+        
 
         #if deficit > 150:
-        #    gamelib.debug_write("jesus christ!")
-        gamelib.debug_write(path)
+        #    #gamelib.debug_write("jesus christ!")
+        gamelib.debug_write("path at hand: " + str(path))
+        
 
         impact_pos = path[len(path)-1]  # this tells us where the unit would score. we will place turrets in locations close-ish to this spot.
 
+
+        if impact_pos[1] > 12: # it never crosses into our territory (this is a quirk of the pathfinding)
+            if impact_pos[0] > 13: # right side
+                turret_loc = [[24, 12]]
+                wall_loc = [[24, 13], [25, 13], [26, 13], [27, 13]]
+                
+                gamelib.debug_write("placing corner defenses at " + str(wall_loc) + " and " + str(turret_loc))
+                
+                game_state.attempt_spawn(WALL, wall_loc)
+                game_state.attempt_spawn(TURRET, turret_loc)
+                game_state.attempt_upgrade(turret_loc)
+            
+            else: # left side
+                turret_loc = [[3, 12]]
+                wall_loc = [[0, 13], [1, 13], [2, 13], [3, 13]]
+                
+                gamelib.debug_write("placing corner defenses at " + str(wall_loc) + " and " + str(turret_loc))
+                
+                game_state.attempt_spawn(WALL, wall_loc)
+                game_state.attempt_spawn(TURRET, turret_loc)
+                game_state.attempt_upgrade(turret_loc)
+            
+            return
+
         turrets = list(turrets)
         i = 0
-        for p in path:
-            if cost_allocation <= 0:
-                gamelib.debug_write("____out of resource allocation")
-                break
-            if deficit <= 0:
-                gamelib.debug_write("____eliminated deficit!")
-                break
+        if i < len(turrets):
 
-            if p[1] > impact_pos[1] + IMPACT_MARGIN: continue  # we can't do anything about a unit this far our
-            
-            if i < len(turrets):
-                gamelib.debug_write("______upgrading turret at " + str(p) + ", reducing deficit to " + str(deficit - 10))
-                game_state.attempt_upgrade(turrets[i])
-                i += 1
+            if game_state.attempt_upgrade(turrets[i]) != 0:
+                gamelib.debug_write("succesful upgrade turret")
+                
+
                 cost_allocation -= 4
                 deficit -= 10
+            
+            i += 1
 
-            gamelib.debug_write("______placing turret + wall at " + str(p) + ", reducing deficit to " + str(deficit - 10))
+        for p in path:
+            if cost_allocation <= 0:
+                #gamelib.debug_write("____out of resource allocation")
+                break
+            if deficit <= 0:
+                #gamelib.debug_write("____eliminated deficit!")
+                break
+            
+            if p[1] > 13:
+                continue
+            if impact_pos[1] < 12:
+                if p[1] > impact_pos[1] + IMPACT_MARGIN: continue
+            
+            
+
+            #gamelib.debug_write("______placing turret + wall at " + str(p) + ", reducing deficit to " + str(deficit - 10))
             
             game_state.attempt_spawn(WALL, (p[0], p[1] + 1) )
             game_state.attempt_spawn(TURRET, p)  # placing a turret right on the path is probably not a very good approach. we'll try other stuff later.
@@ -155,13 +236,13 @@ class AlgoStrategy(gamelib.AlgoCore):
             deficit -= DEFICIT_REDUCTION    # this is kinda dumb. calculate the actual damage.
 
             if deficit > 0 and cost_allocation > 0:
-                gamelib.debug_write("______managed to upgrade!")
+                #gamelib.debug_write("______managed to upgrade!")
                 game_state.attempt_upgrade(p)
 
                 cost_allocation -= TURRET_COST
                 deficit -= DEFICIT_REDUCTION
 
-        gamelib.debug_write("__done, I guess...")
+        #gamelib.debug_write("__done, I guess...")
     '''
     hardcoded initial structure setup. makes some walls, some turrets, and a factory.
     '''
@@ -221,9 +302,11 @@ class AlgoStrategy(gamelib.AlgoCore):
     note that 2 scouts moving together will not both be eliminated just because this function returns >15.
     to kill 2 troops moving together, we need to deal the sum of their health.
     '''
-    def simulate_unit_journey(self, game_state, startpos, edge="NE"):
-        path = self.fast_astar(game_state, startpos, edge)
-        #gamelib.debug_write(path)
+    def simulate_unit_journey(self, game_state, startpos, edge="NE", exclude=[]):
+        path = self.fast_astar(game_state, startpos, edge=edge, stop_if_found=exclude)
+        
+        if len(path) == 0:
+            return None
 
         player = 0 if edge == "SE" or edge == "SW" else 1
         y_limits = (0, 14) if player == 0 else (13, 30)
@@ -239,7 +322,7 @@ class AlgoStrategy(gamelib.AlgoCore):
                     if unit.player_index == player and unit.unit_type == TURRET:
                         units.append(location)
 
-        gamelib.debug_write("_turrets present: " + str(len(units)) )
+        #gamelib.debug_write("_turrets present: " + str(len(units)) )
 
         relevant_turrets = set()
 
@@ -252,7 +335,7 @@ class AlgoStrategy(gamelib.AlgoCore):
                     relevant_turrets.add(tuple(unit))
                     damage += 5
         
-        gamelib.debug_write("__path damage:", damage)
+        #gamelib.debug_write("__path damage:", damage)
         return (damage, path, relevant_turrets)
 
     '''
@@ -329,7 +412,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     greedy best-first search, should run pretty quick
     specify edge as NE, NW, SE, or SW (look at a compass)
     '''
-    def fast_astar(self, game_state, start=(14, 14), edge="NE"):
+    def fast_astar(self, game_state, start=(14, 14), edge="NE", stop_if_found=[]):
 
         start = (start[0], start[1])
 
@@ -347,6 +430,9 @@ class AlgoStrategy(gamelib.AlgoCore):
 
             temp = heapq.heappop(queue)
             current = temp[1]
+
+            if current in stop_if_found:
+                return []
             
             currentcost = states[str(current)][1]   # gives us int cost_so_far
 
@@ -410,11 +496,11 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     def spd_strat_main(self, game_state, my_seed):
         # build initial groundwork 
-        if game_state.turn_number == 0:
-            if my_seed == 1:
-                self.build_init_defence1(game_state)
-            else:
-                self.build_init_defence2(game_state)
+        #if game_state.turn_number == 0:
+        #    if my_seed == 1:
+        #        self.build_init_defence1(game_state)
+        #    else:
+        #        self.build_init_defence2(game_state)
 
         if game_state.turn_number % 3 == 1:
             if self.attack_close_scouts_all(game_state) == 1:
@@ -423,10 +509,10 @@ class AlgoStrategy(gamelib.AlgoCore):
             if game_state.turn_number % 3 == 2:
                 self.clear_w_demolishers(game_state)
 
-        if game_state.turn_number % 5 == 0:
-            self.my_build_reactive_defense_w_mirror(game_state)
-        else:
-            self.my_build_reactive_defense(game_state)
+        #if game_state.turn_number % 5 == 0:
+        #    self.my_build_reactive_defense_w_mirror(game_state)
+        #else:
+        #    self.my_build_reactive_defense(game_state)
             
         if game_state.turn_number == 2 or game_state.turn_number % 4 == 0:
             factory_locations = [[13, 0], [14, 0], [13, 1], [14, 1], [13, 2], [14, 2], [13, 3], [14, 3]]
@@ -539,9 +625,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             added_turret = False
             for x in range(location[0] - 2, location[0]+2):
                 for y in range(location[1] - 2, location[1]+2):
-                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
+                    # #gamelib.debug_write("attempting turrets {},{}".format(x,y))
                     if game_state.attempt_spawn(TURRET, [x,y]) == 1:
-                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
+                        # #gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
                         added_turret = True
                         turret_built_for_scored_on_location.append(location)
                         break
@@ -575,9 +661,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             added_turret = False
             for x in range(location[0] - 2, location[0]+2):
                 for y in range(location[1] - 2, location[1]+2):
-                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
+                    # #gamelib.debug_write("attempting turrets {},{}".format(x,y))
                     if game_state.attempt_spawn(TURRET, [x,y]) == 1:
-                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
+                        # #gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
                         added_turret = True
                         turret_built_for_scored_on_location.append(location)
                         game_state.attempt_spawn(TURRET, self.mirror_cord([x,y]))
@@ -608,7 +694,7 @@ class AlgoStrategy(gamelib.AlgoCore):
             path = game_state.find_path_to_edge(location)
             try:
                 if path[-1] in targets:
-                    # gamelib.debug_write("ROHAN LOOK {}".format(path))
+                    # #gamelib.debug_write("ROHAN LOOK {}".format(path))
                     damage = 0
                     for path_location in path:
                         # Get number of enemy turrets that can attack each location and multiply by turret damage
@@ -621,17 +707,17 @@ class AlgoStrategy(gamelib.AlgoCore):
                 continue
         
         if len(damages) == 0:
-            # gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
+            # #gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
             return [], -1
         else:
             min_damage = min(damages)
             if min_damage >= unit_health:
-                # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
+                # #gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
                 return location_options[damages.index(min_damage)], 1
             else:
                 # element of randomness to mess with other team
                 if random.randint(0, 50) == 1:
-                    # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
+                    # #gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
                     return location_options[damages.index(nsmallest(2, damages)[-1])], 0
                 else:
                     if nsmallest(2, damages)[-1] == min_damage:
@@ -818,9 +904,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             # When parsing the frame data directly, 
             # 1 is integer for yourself, 2 is opponent (StarterKit code uses 0, 1 as player_index instead)
             if not unit_owner_self:
-                #gamelib.debug_write("Got scored on at: {}".format(location))
+                ##gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
-                #gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
+                ##gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
 
 if __name__ == "__main__":
