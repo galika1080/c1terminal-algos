@@ -108,9 +108,13 @@ class AlgoStrategy(gamelib.AlgoCore):
 
             if p[1][0] < damage_goal:
                 gamelib.debug_write("____deficit found: " + str(p[1][0]) + " is less than " + str(damage_goal))
-                self.reinforce(game_state, p[1][1], damage_goal - p[1][0], cost_allocation=split)
+                self.reinforce(game_state, p[1][1], damage_goal - p[1][0], p[1][2], cost_allocation=split)
 
-    def reinforce(self, game_state, path, deficit, cost_allocation=100000):
+    def reinforce(self, game_state, path, deficit, turrets, cost_allocation=100000):
+        IMPACT_MARGIN = 3
+        TURRET_COST = 3
+        DEFICIT_REDUCTION = 10
+
         cost_allocation = max(cost_allocation, 2)
 
         gamelib.debug_write("____attempting to fix deficit of " + str(deficit))
@@ -121,6 +125,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         #    gamelib.debug_write("jesus christ!")
         gamelib.debug_write(path)
 
+        impact_pos = path[len(path)-1]  # this tells us where the unit would score. we will place turrets in locations close-ish to this spot.
+
+        turrets = list(turrets)
+        i = 0
         for p in path:
             if cost_allocation <= 0:
                 gamelib.debug_write("____out of resource allocation")
@@ -128,12 +136,30 @@ class AlgoStrategy(gamelib.AlgoCore):
             if deficit <= 0:
                 gamelib.debug_write("____eliminated deficit!")
                 break
-            if p[1] > 13: continue  # we can't do anything about a unit this far our
+
+            if p[1] > impact_pos[1] + IMPACT_MARGIN: continue  # we can't do anything about a unit this far our
             
-            gamelib.debug_write("______placing turret at " + str(p) + ", reducing deficit to " + str(deficit - 10))
+            if i < len(turrets):
+                gamelib.debug_write("______upgrading turret at " + str(p) + ", reducing deficit to " + str(deficit - 10))
+                game_state.attempt_upgrade(turrets[i])
+                i += 1
+                cost_allocation -= 4
+                deficit -= 10
+
+            gamelib.debug_write("______placing turret + wall at " + str(p) + ", reducing deficit to " + str(deficit - 10))
+            
+            game_state.attempt_spawn(WALL, (p[0], p[1] + 1) )
             game_state.attempt_spawn(TURRET, p)  # placing a turret right on the path is probably not a very good approach. we'll try other stuff later.
-            cost_allocation -= 2
-            deficit -= 10 # this is kinda dumb. calculate the actual damage.
+
+            cost_allocation -= TURRET_COST
+            deficit -= DEFICIT_REDUCTION    # this is kinda dumb. calculate the actual damage.
+
+            if deficit > 0 and cost_allocation > 0:
+                gamelib.debug_write("______managed to upgrade!")
+                game_state.attempt_upgrade(p)
+
+                cost_allocation -= TURRET_COST
+                deficit -= DEFICIT_REDUCTION
 
         gamelib.debug_write("__done, I guess...")
     '''
@@ -215,16 +241,19 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         gamelib.debug_write("_turrets present: " + str(len(units)) )
 
+        relevant_turrets = set()
+
         damage = 0
 
         for step in path:
             for unit in units:
                 d = (unit[0] - step[0])**2 + (unit[1] - step[1])**2
                 if d < 6.25: # these need to take into account upgraded turrets...
+                    relevant_turrets.add(tuple(unit))
                     damage += 5
         
         gamelib.debug_write("__path damage:", damage)
-        return (damage, path)
+        return (damage, path, relevant_turrets)
 
     '''
     gives the maximum total damage we'd have to deal to eliminate all mobile troops,
@@ -255,6 +284,7 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     '''
     get candidates
+    looking at this function makes me feel physically ill
     '''
     def get_candidates(self, game_state, pos, last_vert=False, edge="NE"):
         boundary_edges = set(["NE, NW, SE, SW"]) - set([edge])
@@ -262,34 +292,34 @@ class AlgoStrategy(gamelib.AlgoCore):
         res = []
 
         atmpt = (pos[0] + 1, pos[1])
-        in_bounds = True
+        in_bounds = -1 < atmpt[0] < 28 and -1 < atmpt[1] < 28
         for e in boundary_edges:
             if self.fastheuristic(atmpt, e):
                 in_bounds = False
         if in_bounds and not game_state.contains_stationary_unit(atmpt):
             res.append((atmpt, 0.25 if last_vert else -0.25))
         
-        in_bounds = True
-        for e in boundary_edges:
-            if self.fastheuristic(atmpt, e):
-                in_bounds = False
         atmpt = (pos[0] - 1, pos[1])
-        if in_bounds and not game_state.contains_stationary_unit(atmpt):
-            res.append((atmpt, 0.25 if last_vert else -0.25))
-        
-        in_bounds = True
+        in_bounds = -1 < atmpt[0] < 28 and -1 < atmpt[1] < 28
         for e in boundary_edges:
             if self.fastheuristic(atmpt, e):
                 in_bounds = False
+        if in_bounds and not game_state.contains_stationary_unit(atmpt):
+            res.append((atmpt, 0.25 if last_vert else -0.25))
+        
         atmpt = (pos[0], pos[1] + 1)
+        in_bounds = -1 < atmpt[0] < 28 and -1 < atmpt[1] < 28
+        for e in boundary_edges:
+            if self.fastheuristic(atmpt, e):
+                in_bounds = False
         if in_bounds and not game_state.contains_stationary_unit(atmpt):
             res.append((atmpt, 0.25 if not last_vert else -0.25))
         
-        in_bounds = True
+        atmpt = (pos[0], pos[1] - 1)
+        in_bounds = -1 < atmpt[0] < 28 and -1 < atmpt[1] < 28
         for e in boundary_edges:
             if self.fastheuristic(atmpt, e):
                 in_bounds = False
-        atmpt = (pos[0], pos[1] - 1)
         if in_bounds and not game_state.contains_stationary_unit(atmpt):
             res.append((atmpt, 0.25 if not last_vert else -0.25))
 
