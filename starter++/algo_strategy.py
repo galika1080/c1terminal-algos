@@ -497,10 +497,11 @@ class AlgoStrategy(gamelib.AlgoCore):
     def spd_strat_main(self, game_state, my_seed):
         # build initial groundwork 
         if game_state.turn_number == 0:
-            if my_seed == 1:
-                self.build_init_defence1(game_state)
-            else:
-                self.build_init_defence2(game_state)
+            # if my_seed == 1:
+            #     self.build_init_defence1(game_state)
+            # else:
+            #     self.build_init_defence2(game_state)
+            self.init_defence_factory_focus(game_state)
 
         # factory time ;)
         if game_state.turn_number <= 10 or game_state.get_resource(SP) >=14:
@@ -516,6 +517,7 @@ class AlgoStrategy(gamelib.AlgoCore):
                     counter += 1
                 if counter == num_factory:
                     break
+
     
         ### RUDIMENTARY ATTACKING STRATEGY
         scout_spawn_location_options = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5]]
@@ -538,6 +540,28 @@ class AlgoStrategy(gamelib.AlgoCore):
             self.clear_w_demolishers(game_state)
         ###################
 
+
+        ### BUILD FRONT LINE:
+        if game_state.turn_number % 2 == 0 and game_state.get_resource(SP) >= 25:
+            sp = game_state.get_resource(SP)
+            # if on a turn when we build factory focus on 
+            # building as many turrets/walls while still having enough for a factory
+            if sp >= 15 and game_state.turn_number % 4 == 0:
+                while sp >= 15:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+            else:
+                while sp > 8:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+
+
         ### FACTORY PROTECTION
 
         # protect factories
@@ -551,17 +575,32 @@ class AlgoStrategy(gamelib.AlgoCore):
             for i in range(9, 19):
                 game_state.attempt_spawn(WALL, [i, 4])  
 
-        if game_state.turn_number % 5 == 0:
+        if game_state.turn_number % 4 == 0:
             factory_locations = [[13, 0], [14, 0], [12, 1], [13, 1], [14, 1], [15, 1],[11, 2], [12, 2], [13, 2], [14, 2], [15, 2], [16, 2]]
             spawned = False
             for location in factory_locations:
-                if game_state.attempt_spawn(FACTORY, location):
+                if game_state.attempt_upgrade(location):
                     spawned = True 
                     break
             if spawned == False:
                 for location in factory_locations:
-                    if game_state.attempt_upgrade(location):
-                        break
+                    game_state.attempt_spawn(FACTORY, location)
+
+
+    def build_one_front_line(self, game_state, seed):
+        # fill from the edges
+        if seed == 2:
+            for i in range(3, 13):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
+        else:
+            for i in range(27, 13, -1):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
 
     # have one version then a mirrored version too
     def build_init_defence1(self, game_state):
@@ -605,6 +644,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         # place interceptors to catch others
         game_state.attempt_spawn(INTERCEPTOR, [[2, 11], [3, 10], [4, 9], [5, 8], [6, 7]])
         game_state.attempt_spawn(INTERCEPTOR,[[6, 7]])
+
+
+    def init_defence_factory_focus(self, game_state):
+        game_state.attempt_spawn(FACTORY, [[13, 0], [14, 0]])
+        game_state.attempt_upgrade([[13, 0]])
+        game_state.attempt_spawn(INTERCEPTOR,[[26, 12], [2, 11], [22, 8], [18, 4], [10, 3]])
 
     def mirror_cord(self, cord):
         if cord[0] <= 13:
