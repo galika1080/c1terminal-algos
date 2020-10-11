@@ -496,24 +496,26 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     def spd_strat_main(self, game_state, my_seed):
         # build initial groundwork 
-        #if game_state.turn_number == 0:
-        #    if my_seed == 1:
-        #        self.build_init_defence1(game_state)
-        #    else:
-        #        self.build_init_defence2(game_state)
+        if game_state.turn_number == 0:
+            if my_seed == 1:
+                self.build_init_defence1(game_state)
+            else:
+                self.build_init_defence2(game_state)
 
+        ### RUDIMENTARY ATTACKING STRATEGY
         if game_state.turn_number % 3 == 1:
             if self.attack_close_scouts_all(game_state) == 1:
-                self.clear_w_demolishers(game_state)
+                # self.clear_w_demolishers(game_state)
+                # # throw out scouts anyways
+                if game_state.get_resource(MP) > 30:
+                    scout_spawn_location_options = [[13, 0], [14, 0]]
+                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                    game_state.attempt_spawn(SCOUT, best_location, 1000)
         else:
             if game_state.turn_number % 3 == 2:
                 self.clear_w_demolishers(game_state)
+        ###################
 
-        #if game_state.turn_number % 5 == 0:
-        #    self.my_build_reactive_defense_w_mirror(game_state)
-        #else:
-        #    self.my_build_reactive_defense(game_state)
-            
         if game_state.turn_number == 2 or game_state.turn_number % 4 == 0:
             factory_locations = [[13, 0], [14, 0], [13, 1], [14, 1], [13, 2], [14, 2], [13, 3], [14, 3]]
             spawned = False
@@ -538,7 +540,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_upgrade([[7, 11], [14, 11]])
 
         # build walls to divert traffic
-        game_state.attempt_spawn(WALL, [[3, 13], [4, 13], [5, 13], [6, 13], [7, 13]])
+        game_state.attempt_spawn(WALL, [[2, 13], [3, 13], [4, 13], [5, 13], [6, 13], [7, 13]])
 
         # build some Factories to generate more resources
         factory_locations = [[13, 0]]
@@ -559,7 +561,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_upgrade([[13, 11], [20, 11]])
 
         # build walls to divert traffic
-        game_state.attempt_spawn(WALL, [[20, 13], [21, 13], [22, 13], [23, 13], [24, 13]])
+        game_state.attempt_spawn(WALL, [[20, 13], [21, 13], [22, 13], [23, 13], [24, 13], [26, 13]])
 
         # build some Factories to generate more resources
         factory_locations = [[14, 0]]
@@ -569,6 +571,14 @@ class AlgoStrategy(gamelib.AlgoCore):
         # place interceptors to catch others
         game_state.attempt_spawn(INTERCEPTOR, [[2, 11], [3, 10], [4, 9], [5, 8], [6, 7]])
         game_state.attempt_spawn(INTERCEPTOR,[[6, 7]])
+
+    def mirror_cord(self, cord):
+        if cord[0] <= 13:
+            new_x_cord = 14+(13-cord[0])
+            return [new_x_cord, cord[1]]
+        else:
+            new_x_cord = 13-(cord[0]-14)
+            return [new_x_cord, cord[1]]
 
     def mirror_cord(self, cord):
         if cord[0] <= 13:
