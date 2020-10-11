@@ -83,20 +83,50 @@ class AlgoStrategy(gamelib.AlgoCore):
             else:
                 self.build_init_defence2(game_state)
 
+        ### RUDIMENTARY ATTACKING STRATEGY
         if game_state.turn_number % 3 == 1:
             if self.attack_close_scouts_all(game_state) == 1:
-                self.clear_w_demolishers(game_state)
+                # self.clear_w_demolishers(game_state)
+                # # throw out scouts anyways
+                if game_state.get_resource(MP) > 30:
+                    scout_spawn_location_options = [[13, 0], [14, 0]]
+                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                    game_state.attempt_spawn(SCOUT, best_location, 1000)
         else:
             if game_state.turn_number % 3 == 2:
                 self.clear_w_demolishers(game_state)
+        ###################
 
+        ### BUILDING REACTIVE DEFENCES EACH ROUND
         if game_state.turn_number % 5 == 0:
             self.my_build_reactive_defense_w_mirror(game_state)
         else:
             self.my_build_reactive_defense(game_state)
+        ###################
+
+        ### BUILD FRONT LINE:
+        if game_state.turn_number % 2 == 0:
+            sp = game_state.get_resource(SP)
+            # if on a turn when we build factory focus on 
+            # building as many turrets/walls while still having enough for a factory
+            if sp >= 12 and game_state.turn_number % 4 == 0:
+                while sp >= 12:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+            else:
+                while sp > 5:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
             
-        if game_state.turn_number == 2 or game_state.turn_number % 4 == 0:
-            factory_locations = [[13, 0], [14, 0], [13, 1], [14, 1], [13, 2], [14, 2], [13, 3], [14, 3]]
+        ### FACTORY BUILDING/UPGRADE 
+        if (game_state.turn_number == 2) or (game_state.turn_number % 2 == 0 and game_state.turn_number <= 30) or (game_state.turn_number % 4 == 0 and game_state.turn_number > 30):
+            factory_locations = [[13, 0], [14, 0], [12, 1], [13, 1], [14, 1], [15, 1], [11, 2], [12, 2], [13, 2], [14, 2], [15, 2], [16, 2], [10, 3], [11, 3], [12, 3], [14, 3], [15, 3], [16,3], [17,3], [18,3], [9, 4], [10, 4], [11, 4], [12, 4], [14, 4], [15, 4], [16,4], [17,4], [18,4], [19,4]]
             spawned = False
             for location in factory_locations:
                 if game_state.attempt_spawn(FACTORY, location):
@@ -106,7 +136,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                 for location in factory_locations:
                     if game_state.attempt_upgrade(location):
                         break
-
 
     # have one version then a mirrored version too
     def build_init_defence1(self, game_state):
@@ -165,7 +194,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         # close point
         close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
         attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
+        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, game_state.type_cost(SCOUT)[MP]*int(game_state.get_resource(MP)/game_state.get_resource(SP)))
+
+        gamelib.debug_write("ROHAN BEST SPOTS {}".format(best_location))
 
         if options == 0:    
             game_state.attempt_spawn(SCOUT, best_location, 1000)
@@ -182,12 +213,92 @@ class AlgoStrategy(gamelib.AlgoCore):
     def clear_w_demolishers(self, game_state):
         # we want to try and attack close to enemy lines when reducing points
         # close point
-        close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
-        attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
+        # close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
+        # attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
+        # best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, game_state.type_cost(DEMOLISHER)[MP]*3)
     
-        game_state.attempt_spawn(DEMOLISHER, best_location, 1000)
+        best_locations = [[2, 11], [25, 11]]
+        max_path = -1
+        max_idx = -1
+        for location in best_locations:
+            path = game_state.find_path_to_edge(location)
+            if path == None:
+                curr_path = 0
+            else:
+                curr_path = len(path)
+            if curr_path > max_path:
+                max_path = curr_path
+                max_idx = location
 
+        game_state.attempt_spawn(DEMOLISHER, max_idx, min(int(int(game_state.get_resource(MP)*0.5)/game_state.type_cost(DEMOLISHER)[MP]), 5))
+
+    # similar to least_damage_spawn_location but with targets
+    # returns best point(s) to attack from or -1
+    # returns best point and another condition (0, 1, 2) 
+    # 0 - Unit should take less than their health's worth of damage
+    # 1- Unit could take more than their health's worth of damage
+    # 2 - Multiple best paths
+    def pick_best_close_attack(self, game_state, location_options, targets, unit_health):
+        
+        damages = []
+        # Get the damage estimate each path will take
+        for location in location_options:
+            path = game_state.find_path_to_edge(location)
+            try:
+                if path[-1] in targets:
+                    gamelib.debug_write("ROHAN LOOK {}".format(path))
+                    damage = 0
+                    for path_location in path:
+                        # Get number of enemy turrets that can attack each location and multiply by turret damage
+                        damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
+                    damages.append(damage)
+                else:
+                    damages.append(maxsize)
+            except:
+                damages.append(maxsize)
+        
+
+        gamelib.debug_write("ROHAN LOOK {}".format(damages))
+
+        if len(damages) == 0:
+            # gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
+            return [], -1
+        else:
+            min_damage = min(damages)
+            if min_damage == maxsize:
+                return [], -1
+            elif min_damage >= unit_health:
+                # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
+                return location_options[damages.index(min_damage)], 1
+            else:
+                # element of randomness to mess with other team
+                if random.randint(0, 50) == 1:
+                    # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
+                    return location_options[damages.index(nsmallest(2, damages)[-1])], 0
+                else:
+                    if nsmallest(2, damages)[-1] == min_damage:
+                        return [location_options[damages.index(min_damage)], location_options[damages.index(nsmallest(2, damages)[-1])]], 2
+                    else:
+                        return location_options[damages.index(min_damage)], 1
+
+
+        # Now just return the location that takes the least damage
+        return location_options[damages.index(min(damages))]
+
+    def build_one_front_line(self, game_state, seed):
+        # fill from the edges
+        if seed == 2:
+            for i in range(3, 13):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
+        else:
+            for i in range(27, 13, -1):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
 
     def my_build_reactive_defense(self, game_state):
         """
@@ -260,56 +371,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                 for i in range(location[0] - 3, location[0]+3):
                     if i >=10:
                         game_state.attempt_spawn(WALL, [i, location[1]])
-
-    # similar to least_damage_spawn_location but with targets
-    # returns best point(s) to attack from or -1
-    # returns best point and another condition (0, 1, 2) 
-    # 0 - Unit should take less than their health's worth of damage
-    # 1- Unit could take more than their health's worth of damage
-    # 2 - Multiple best paths
-    def pick_best_close_attack(self, game_state, location_options, targets, unit_health):
-        
-        damages = []
-        # Get the damage estimate each path will take
-        for location in location_options:
-            path = game_state.find_path_to_edge(location)
-            try:
-                if path[-1] in targets:
-                    # gamelib.debug_write("ROHAN LOOK {}".format(path))
-                    damage = 0
-                    for path_location in path:
-                        # Get number of enemy turrets that can attack each location and multiply by turret damage
-                        damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
-                    damages.append(damage)
-                else:
-                    damages.append(maxsize)
-            except:
-                damages.append(maxsize)
-                continue
-        
-        if len(damages) == 0:
-            # gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
-            return [], -1
-        else:
-            min_damage = min(damages)
-            if min_damage >= unit_health:
-                # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
-                return location_options[damages.index(min_damage)], 1
-            else:
-                # element of randomness to mess with other team
-                if random.randint(0, 50) == 1:
-                    # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
-                    return location_options[damages.index(nsmallest(2, damages)[-1])], 0
-                else:
-                    if nsmallest(2, damages)[-1] == min_damage:
-                        return [location_options[damages.index(min_damage)], location_options[damages.index(nsmallest(2, damages)[-1])]], 2
-                    else:
-                        return location_options[damages.index(min_damage)], 1
-
-
-        # Now just return the location that takes the least damage
-        return location_options[damages.index(min(damages))]
-
 
 ################################################
     def starter_strategy(self, game_state):
