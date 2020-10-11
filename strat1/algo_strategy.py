@@ -1,13 +1,18 @@
-#import strat1.gamelib as gamelib
 import gamelib
 import random
 import math
 import warnings
 from sys import maxsize
 import json
-import heapq
 from heapq import nsmallest
+import heapq
 
+
+"""
+
+SPD bot
+
+"""
 
 """
 Most of the algo code you write will be in this file unless you create new
@@ -28,9 +33,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         seed = random.randrange(maxsize)
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
+        # attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
 
     def on_game_start(self, config):
-        """
+        """ 
         Read in config and perform any initial setup here 
         """
         gamelib.debug_write('Configuring your custom algo strategy...')
@@ -47,35 +53,379 @@ class AlgoStrategy(gamelib.AlgoCore):
         # This is a good place to do initial setup
         self.scored_on_locations = []
 
-
-    """
-    This function is called every turn with the game state wrapper as
-    an argument. The wrapper stores the state of the arena and has methods
-    for querying its state, allocating your current resources as planned
-    unit deployments, and transmitting your intended deployments to the
-    game engine.
-    """
     def on_turn(self, turn_state):
+        """
+        This function is called every turn with the game state wrapper as
+        an argument. The wrapper stores the state of the arena and has methods
+        for querying its state, allocating your current resources as planned
+        unit deployments, and transmitting your intended deployments to the
+        game engine.
+        """
         game_state = gamelib.GameState(self.config, turn_state)
-
-        #if game_state.turn_number == 0:
-        #    ...
-        #    self.initial_defense(game_state)
-
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
-        game_state.suppress_warnings(True)  # Comment or remove this line to enable warnings.
-
+        game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
         my_seed = random.randint(0,1)
         self.spd_strat_main(game_state, my_seed)
 
-
-        holes_friendly = self.find_holes(game_state)
-        self.find_deficit(game_state)
-
-
         game_state.submit_turn()
 
+
+    """
+    NOTE: All the methods after this point are part of the sample starter-algo
+    strategy and can safely be replaced for your custom algo.
+    """
+
+    def spd_strat_main(self, game_state, my_seed):
+        # build initial groundwork 
+        if game_state.turn_number == 0:
+            if my_seed == 1:
+                self.build_init_defence1(game_state)
+            else:
+                self.build_init_defence2(game_state)
+
+        ### RUDIMENTARY ATTACKING STRATEGY
+        if game_state.turn_number % 3 == 0:
+            gamelib.debug_write("Scout mode, MP:{}".format(game_state.get_resource(MP)))
+
+            if game_state.turn_number <= 10:
+                if self.attack_close_scouts_all(game_state) == 1:
+                    # self.clear_w_demolishers(game_state)
+                    # # throw out scouts anyways
+                    if game_state.get_resource(MP) > 15:
+                        scout_spawn_location_options = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
+                        spawn_here = []
+                        for location in scout_spawn_location_options:
+                            if game_state.can_spawn(SCOUT, location):
+                                spawn_here.append(location)
+                                if len(spawn_here) >= 2:
+                                    break
+                        best_location = self.least_damage_spawn_location(game_state, spawn_here)
+                        if game_state.get_resource(MP) > 25:
+                            game_state.attempt_spawn(SCOUT, best_location, 1000)
+                        else:
+                            game_state.attempt_spawn(INTERCEPTOR, best_location, 1000)
+            else:
+                if game_state.get_resource(MP) > 15:
+                        scout_spawn_location_options = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
+                        spawn_here = []
+                        for location in scout_spawn_location_options:
+                            if game_state.can_spawn(SCOUT, location):
+                                spawn_here.append(location)
+                                if len(spawn_here) >= 2:
+                                    break
+                        best_location = self.least_damage_spawn_location(game_state, spawn_here)
+                        if game_state.get_resource(MP) > 25:
+                            game_state.attempt_spawn(SCOUT, best_location, 1000)
+                        else:
+                            game_state.attempt_spawn(INTERCEPTOR, best_location, 1000)
+                    
+        else:
+            gamelib.debug_write("Destr mode, MP:{}".format(game_state.get_resource(MP)))
+            if game_state.turn_number % 3 == 1:
+                self.clear_w_demolishers(game_state)
+        ###################
+
+        ### BUILDING REACTIVE DEFENCES EACH ROUND
+        if game_state.turn_number % 5 == 0:
+            self.my_build_reactive_defense_w_mirror(game_state)
+        else:
+            self.my_build_reactive_defense(game_state)
+        ###################
+
+        ### BUILD FRONT LINE:
+        if game_state.turn_number % 2 == 0:
+            sp = game_state.get_resource(SP)
+            # if on a turn when we build factory focus on 
+            # building as many turrets/walls while still having enough for a factory
+            if sp >= 12 and game_state.turn_number % 4 == 0:
+                while sp >= 12:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+            else:
+                while sp > 5:
+                    prev_sp = sp
+                    self.build_one_front_line(game_state, game_state.turn_number % 4)
+                    sp = game_state.get_resource(SP)
+                    if prev_sp == sp:
+                        break
+            
+        ### FACTORY BUILDING/UPGRADE 
+        if (game_state.turn_number == 2) or (game_state.turn_number % 2 == 0 and game_state.turn_number <= 30) or (game_state.turn_number % 4 == 0 and game_state.turn_number > 30):
+            factory_locations = [[13, 0], [14, 0], [12, 1], [13, 1], [14, 1], [15, 1], [11, 2], [12, 2], [13, 2], [14, 2], [15, 2], [16, 2], [10, 3], [11, 3], [12, 3], [14, 3], [15, 3], [16,3], [17,3], [18,3], [9, 4], [10, 4], [11, 4], [12, 4], [14, 4], [15, 4], [16,4], [17,4], [18,4], [19,4]]
+            spawned = False
+            for location in factory_locations:
+                if game_state.attempt_spawn(FACTORY, location):
+                    spawned = True 
+                    break
+            if spawned == False:
+                for location in factory_locations:
+                    if game_state.attempt_upgrade(location):
+                        break
+
+    # have one version then a mirrored version too
+    def build_init_defence1(self, game_state):
+        # Place turrets that attack enemy units
+        turret_locations = [[1, 13], [26, 13], [7, 11], [14, 11]]
+        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
+        game_state.attempt_spawn(TURRET, turret_locations)
+
+        # upgrade central turrets
+        game_state.attempt_upgrade([[7, 11], [14, 11]])
+
+        # build walls to divert traffic
+        game_state.attempt_spawn(WALL, [[3, 13], [4, 13], [5, 13], [6, 13], [7, 13]])
+
+        # build some Factories to generate more resources
+        factory_locations = [[13, 0]]
+        game_state.attempt_spawn(FACTORY, factory_locations)
+
+        
+        # place interceptors to catch others
+        game_state.attempt_spawn(INTERCEPTOR, [[25, 11], [24, 10], [23, 9], [22, 8], [21, 7]])
+        game_state.attempt_spawn(INTERCEPTOR,[[21, 7]])
+
+    def build_init_defence2(self, game_state):
+        # Place turrets that attack enemy units
+        turret_locations = [[1, 13], [26, 13], [13, 11], [20, 11]]
+        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
+        game_state.attempt_spawn(TURRET, turret_locations)
+
+        # upgrade central turrets
+        game_state.attempt_upgrade([[13, 11], [20, 11]])
+
+        # build walls to divert traffic
+        game_state.attempt_spawn(WALL, [[20, 13], [21, 13], [22, 13], [23, 13], [24, 13]])
+
+        # build some Factories to generate more resources
+        factory_locations = [[14, 0]]
+        game_state.attempt_spawn(FACTORY, factory_locations)
+
+        
+        # place interceptors to catch others
+        game_state.attempt_spawn(INTERCEPTOR, [[2, 11], [3, 10], [4, 9], [5, 8], [6, 7]])
+        game_state.attempt_spawn(INTERCEPTOR,[[6, 7]])
+
+    def mirror_cord(self, cord):
+        if cord[0] <= 13:
+            new_x_cord = 14+(13-cord[0])
+            return [new_x_cord, cord[1]]
+        else:
+            new_x_cord = 13-(cord[0]-14)
+            return [new_x_cord, cord[1]]
+
+    # we want to try and attack close to enemy lines when reducing points
+    def attack_close_scouts_all(self, game_state):
+        # we want to try and attack close to enemy lines when reducing points
+        # close point
+        close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
+        attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
+        max_units = int(game_state.get_resource(MP)/game_state.type_cost(SCOUT)[MP])
+        scout_health = 15
+        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, scout_health*max_units)
+
+        # gamelib.debug_write("ROHAN BEST SPOTS {}".format(best_location))
+
+        if options == 0:    
+            game_state.attempt_spawn(SCOUT, best_location, 1000)
+            return 0
+        elif options == 2:
+            for i in range(100):
+                game_state.attempt_spawn(SCOUT, best_location[0])
+                game_state.attempt_spawn(SCOUT, best_location[0])
+            return 0
+        elif options == -1:
+            return 1
+
+    def clear_w_demolishers(self, game_state):
+        # we want to try and attack close to enemy lines when reducing points
+        # close point
+        # close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
+        # attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
+        # best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, game_state.type_cost(DEMOLISHER)[MP]*3)
+    
+        best_locations = [[2, 11], [25, 11]]
+        max_path = -1
+        max_idx = -1
+        for location in best_locations:
+            path = game_state.find_path_to_edge(location)
+            if path == None:
+                curr_path = 0
+            else:
+                curr_path = len(path)
+            if curr_path > max_path:
+                max_path = curr_path
+                max_idx = location
+
+        
+        game_state.attempt_spawn(DEMOLISHER, max_idx, min(int(int(game_state.get_resource(MP)*0.4)/game_state.type_cost(DEMOLISHER)[MP]), 5))
+
+    # similar to least_damage_spawn_location but with targets
+    # returns best point(s) to attack from or -1
+    # returns best point and another condition (0, 1, 2) 
+    # 0 - Unit should take less than their health's worth of damage
+    # 1- Unit could take more than their health's worth of damage
+    # 2 - Multiple best paths
+    def pick_best_close_attack(self, game_state, location_options, targets, unit_health):
+        
+        damages = []
+        # Get the damage estimate each path will take
+        for location in location_options:
+            path = game_state.find_path_to_edge(location)
+            try:
+                if path[-1] in targets:
+                    # gamelib.debug_write("ROHAN LOOK {}".format(path))
+                    damage = 0
+                    for path_location in path:
+                        # Get number of enemy turrets that can attack each location and multiply by turret damage
+                        damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
+                    damages.append(damage)
+                else:
+                    damages.append(maxsize)
+            except:
+                damages.append(maxsize)
+        
+
+        # gamelib.debug_write("ROHAN LOOK {}".format(damages))
+
+        if len(damages) == 0:
+            # gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
+            return [], -1
+        else:
+            min_damage = min(damages)
+            if min_damage == maxsize:
+                return [], -1
+            elif min_damage >= unit_health:
+                # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
+                return location_options[damages.index(min_damage)], 1
+            else:
+                # element of randomness to mess with other team
+                if random.randint(0, 50) == 1:
+                    # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
+                    return location_options[damages.index(nsmallest(2, damages)[-1])], 0
+                else:
+                    if nsmallest(2, damages)[-1] == min_damage:
+                        return [location_options[damages.index(min_damage)], location_options[damages.index(nsmallest(2, damages)[-1])]], 2
+                    else:
+                        return location_options[damages.index(min_damage)], 1
+
+
+        # Now just return the location that takes the least damage
+        return location_options[damages.index(min(damages))]
+
+    def build_one_front_line(self, game_state, seed):
+        # fill from the edges
+        if seed == 2:
+            for i in range(3, 13):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
+        else:
+            for i in range(27, 13, -1):
+                # build
+                game_state.attempt_spawn(WALL, [i,13])
+                if game_state.attempt_spawn(TURRET, [i,12]) == 1:
+                    return 0
+
+    def my_build_reactive_defense(self, game_state):
+        """
+        This function builds reactive defenses based on where the enemy scored on us from.
+        We can track where the opponent scored by looking at events in action frames 
+        as shown in the on_action_frame function
+        """
+        turret_built_for_scored_on_location = []
+        for location in self.scored_on_locations:
+            # Build turret one space above so that it doesn't block our own edge spawn locations
+            # build_location = [location[0], location[1]+1]
+
+            if location in turret_built_for_scored_on_location:
+                continue
+
+            if location[1] < 9:
+                if location[0] <= 13:
+                    self.build_one_front_line(game_state, 2)
+                    self.build_one_front_line(game_state, 2)
+                else:
+                    self.build_one_front_line(game_state, 0)
+                    self.build_one_front_line(game_state, 0)
+                turret_built_for_scored_on_location.append(location)
+
+            added_turret = False
+            for x in range(location[0] - 2, location[0]+2):
+                for y in range(location[1] - 2, location[1]+2):
+                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
+                    if game_state.attempt_spawn(TURRET, [x,y]) == 1:
+                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
+                        added_turret = True
+                        turret_built_for_scored_on_location.append(location)
+                        break
+                if added_turret:
+                    break
+
+            if location[0] <= 13:
+                for i in range(location[0] - 2, location[0]+2):
+                    if i >=3:
+                        game_state.attempt_spawn(WALL, [i, location[1]])
+            else:
+                for i in range(location[0] - 2, location[0]+2):
+                    if i >=10:
+                        game_state.attempt_spawn(WALL, [i, location[1]])
+
+    def my_build_reactive_defense_w_mirror(self, game_state):
+        """
+        This function builds reactive defenses based on where the enemy scored on us from.
+        We can track where the opponent scored by looking at events in action frames 
+        as shown in the on_action_frame function
+        """
+
+        turret_built_for_scored_on_location = []
+        for location in self.scored_on_locations:
+            # Build turret one space above so that it doesn't block our own edge spawn locations
+            # build_location = [location[0], location[1]+1]
+
+            if location in turret_built_for_scored_on_location:
+                continue
+
+            if location[1] < 9:
+                if location[0] <= 13:
+                    self.build_one_front_line(game_state, 2)
+                    self.build_one_front_line(game_state, 2)
+                else:
+                    self.build_one_front_line(game_state, 0)
+                    self.build_one_front_line(game_state, 0)
+                turret_built_for_scored_on_location.append(location)
+
+            added_turret = False
+            for x in range(location[0] - 2, location[0]+2):
+                for y in range(location[1] - 2, location[1]+2):
+                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
+                    if game_state.attempt_spawn(TURRET, [x,y]) == 1:
+                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
+                        added_turret = True
+                        turret_built_for_scored_on_location.append(location)
+                        game_state.attempt_spawn(TURRET, self.mirror_cord([x,y]))
+                        break
+                if added_turret:
+                    break
+
+            if location[0] <= 13:
+                for i in range(location[0] - 3, location[0]+3):
+                    if i >=3:
+                        game_state.attempt_spawn(WALL, [i, location[1]])
+            else:
+                for i in range(location[0] - 3, location[0]+3):
+                    if i >=10:
+                        game_state.attempt_spawn(WALL, [i, location[1]])
+
+
+
+
+
+############## GALIK #####################
 
     def find_deficit(self, game_state):
         holes_enemy_e = self.find_holes_enemy(game_state, y_range=[15, 28], side="E")
@@ -398,264 +748,7 @@ class AlgoStrategy(gamelib.AlgoCore):
 
 
 
-
-
-
-
-
-    '''
-    rohan code rohan code rohan code
-    '''
-
-
-    def spd_strat_main(self, game_state, my_seed):
-        # build initial groundwork 
-        if game_state.turn_number == 0:
-            if my_seed == 1:
-                self.build_init_defence1(game_state)
-            else:
-                self.build_init_defence2(game_state)
-
-        if game_state.turn_number % 3 == 1:
-            if self.attack_close_scouts_all(game_state) == 1:
-                self.clear_w_demolishers(game_state)
-        else:
-            if game_state.turn_number % 3 == 2:
-                self.clear_w_demolishers(game_state)
-
-        if game_state.turn_number % 5 == 0:
-            self.my_build_reactive_defense_w_mirror(game_state)
-        else:
-            self.my_build_reactive_defense(game_state)
-            
-        if game_state.turn_number == 2 or game_state.turn_number % 4 == 0:
-            factory_locations = [[13, 0], [14, 0], [13, 1], [14, 1], [13, 2], [14, 2], [13, 3], [14, 3]]
-            spawned = False
-            for location in factory_locations:
-                if game_state.attempt_spawn(FACTORY, location):
-                    spawned = True 
-                    break
-            if spawned == False:
-                for location in factory_locations:
-                    if game_state.attempt_upgrade(location):
-                        break
-
-
-    # have one version then a mirrored version too
-    def build_init_defence1(self, game_state):
-        # Place turrets that attack enemy units
-        turret_locations = [[1, 13], [26, 13], [7, 11], [14, 11]]
-        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
-
-        # upgrade central turrets
-        game_state.attempt_upgrade([[7, 11], [14, 11]])
-
-        # build walls to divert traffic
-        game_state.attempt_spawn(WALL, [[3, 13], [4, 13], [5, 13], [6, 13], [7, 13]])
-
-        # build some Factories to generate more resources
-        factory_locations = [[13, 0]]
-        game_state.attempt_spawn(FACTORY, factory_locations)
-
-        
-        # place interceptors to catch others
-        game_state.attempt_spawn(INTERCEPTOR, [[25, 11], [24, 10], [23, 9], [22, 8], [21, 7]])
-        game_state.attempt_spawn(INTERCEPTOR,[[21, 7]])
-
-    def build_init_defence2(self, game_state):
-        # Place turrets that attack enemy units
-        turret_locations = [[1, 13], [26, 13], [13, 11], [20, 11]]
-        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
-
-        # upgrade central turrets
-        game_state.attempt_upgrade([[13, 11], [20, 11]])
-
-        # build walls to divert traffic
-        game_state.attempt_spawn(WALL, [[20, 13], [21, 13], [22, 13], [23, 13], [24, 13]])
-
-        # build some Factories to generate more resources
-        factory_locations = [[14, 0]]
-        game_state.attempt_spawn(FACTORY, factory_locations)
-
-        
-        # place interceptors to catch others
-        game_state.attempt_spawn(INTERCEPTOR, [[2, 11], [3, 10], [4, 9], [5, 8], [6, 7]])
-        game_state.attempt_spawn(INTERCEPTOR,[[6, 7]])
-
-    def mirror_cord(self, cord):
-        if cord[0] <= 13:
-            new_x_cord = 14+(13-cord[0])
-            return [new_x_cord, cord[1]]
-        else:
-            new_x_cord = 13-(cord[0]-14)
-            return [new_x_cord, cord[1]]
-
-    # we want to try and attack close to enemy lines when reducing points
-    def attack_close_scouts_all(self, game_state):
-        # we want to try and attack close to enemy lines when reducing points
-        # close point
-        close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
-        attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
-
-        if options == 0:    
-            game_state.attempt_spawn(SCOUT, best_location, 1000)
-            return 0
-        elif options == 2:
-            for i in range(100):
-                game_state.attempt_spawn(SCOUT, best_location[0])
-                game_state.attempt_spawn(SCOUT, best_location[0])
-            return 0
-        elif options == -1:
-            game_state.attempt_spawn(INTERCEPTOR, [[1, 12], [26, 12]], 3)
-            return 1
-
-    def clear_w_demolishers(self, game_state):
-        # we want to try and attack close to enemy lines when reducing points
-        # close point
-        close_target = [[4, 18], [23, 18], [3, 17], [24, 17], [2, 16], [25, 16], [1, 15], [26, 15], [0, 14], [27, 14]]
-        attacking_from = [[0, 13], [27, 13], [1, 12], [26, 12], [2, 11], [25, 11], [3, 10], [24, 10], [4, 9], [23, 9], [5, 8], [22, 8], [6, 7], [21, 7], [7, 6], [20, 6], [8, 5], [19, 5], [9, 4], [18, 4], [10, 3], [17, 3], [11, 2], [16, 2], [12, 1], [15, 1], [13, 0], [14, 0]]
-        best_location, options = self.pick_best_close_attack(game_state, attacking_from, close_target, 15)
-    
-        game_state.attempt_spawn(DEMOLISHER, best_location, 1000)
-
-
-    def my_build_reactive_defense(self, game_state):
-        """
-        This function builds reactive defenses based on where the enemy scored on us from.
-        We can track where the opponent scored by looking at events in action frames 
-        as shown in the on_action_frame function
-        """
-        turret_built_for_scored_on_location = []
-        for location in self.scored_on_locations:
-            # Build turret one space above so that it doesn't block our own edge spawn locations
-            # build_location = [location[0], location[1]+1]
-
-            if location in turret_built_for_scored_on_location:
-                break
-
-            added_turret = False
-            for x in range(location[0] - 2, location[0]+2):
-                for y in range(location[1] - 2, location[1]+2):
-                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
-                    if game_state.attempt_spawn(TURRET, [x,y]) == 1:
-                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
-                        added_turret = True
-                        turret_built_for_scored_on_location.append(location)
-                        break
-                if added_turret:
-                    break
-
-            if location[0] <= 13:
-                for i in range(location[0] - 2, location[0]+2):
-                    if i >=3:
-                        game_state.attempt_spawn(WALL, [i, location[1]])
-            else:
-                for i in range(location[0] - 2, location[0]+2):
-                    if i >=10:
-                        game_state.attempt_spawn(WALL, [i, location[1]])
-
-    def my_build_reactive_defense_w_mirror(self, game_state):
-        """
-        This function builds reactive defenses based on where the enemy scored on us from.
-        We can track where the opponent scored by looking at events in action frames 
-        as shown in the on_action_frame function
-        """
-
-        turret_built_for_scored_on_location = []
-        for location in self.scored_on_locations:
-            # Build turret one space above so that it doesn't block our own edge spawn locations
-            # build_location = [location[0], location[1]+1]
-
-            if location in turret_built_for_scored_on_location:
-                break
-
-            added_turret = False
-            for x in range(location[0] - 2, location[0]+2):
-                for y in range(location[1] - 2, location[1]+2):
-                    # gamelib.debug_write("attempting turrets {},{}".format(x,y))
-                    if game_state.attempt_spawn(TURRET, [x,y]) == 1:
-                        # gamelib.debug_write("ROHAN turrets {},{}".format(x,y))
-                        added_turret = True
-                        turret_built_for_scored_on_location.append(location)
-                        game_state.attempt_spawn(TURRET, self.mirror_cord([x,y]))
-                        break
-                if added_turret:
-                    break
-
-            if location[0] <= 13:
-                for i in range(location[0] - 3, location[0]+3):
-                    if i >=3:
-                        game_state.attempt_spawn(WALL, [i, location[1]])
-            else:
-                for i in range(location[0] - 3, location[0]+3):
-                    if i >=10:
-                        game_state.attempt_spawn(WALL, [i, location[1]])
-
-    # similar to least_damage_spawn_location but with targets
-    # returns best point(s) to attack from or -1
-    # returns best point and another condition (0, 1, 2) 
-    # 0 - Unit should take less than their health's worth of damage
-    # 1- Unit could take more than their health's worth of damage
-    # 2 - Multiple best paths
-    def pick_best_close_attack(self, game_state, location_options, targets, unit_health):
-        
-        damages = []
-        # Get the damage estimate each path will take
-        for location in location_options:
-            path = game_state.find_path_to_edge(location)
-            try:
-                if path[-1] in targets:
-                    # gamelib.debug_write("ROHAN LOOK {}".format(path))
-                    damage = 0
-                    for path_location in path:
-                        # Get number of enemy turrets that can attack each location and multiply by turret damage
-                        damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
-                    damages.append(damage)
-                else:
-                    damages.append(maxsize)
-            except:
-                damages.append(maxsize)
-                continue
-        
-        if len(damages) == 0:
-            # gamelib.debug_write("ROHAN LOOK {} {}".format([], -1))
-            return [], -1
-        else:
-            min_damage = min(damages)
-            if min_damage >= unit_health:
-                # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(min_damage)]), 1)
-                return location_options[damages.index(min_damage)], 1
-            else:
-                # element of randomness to mess with other team
-                if random.randint(0, 50) == 1:
-                    # gamelib.debug_write("ROHAN LOOK {} {}".format(location_options[damages.index(nsmallest(2, damages)[-1])], 0)
-                    return location_options[damages.index(nsmallest(2, damages)[-1])], 0
-                else:
-                    if nsmallest(2, damages)[-1] == min_damage:
-                        return [location_options[damages.index(min_damage)], location_options[damages.index(nsmallest(2, damages)[-1])]], 2
-                    else:
-                        return location_options[damages.index(min_damage)], 1
-
-
-        # Now just return the location that takes the least damage
-        return location_options[damages.index(min(damages))]
-
-
-
-
-
-
-
-
-
-    """
-    NOTE: All the methods after this point are part of the sample starter-algo
-    strategy and can safely be replaced for your custom algo.
-    """
-
+################################################
     def starter_strategy(self, game_state):
         """
         For defense we will use a spread out layout and some interceptors early on.
@@ -818,9 +911,9 @@ class AlgoStrategy(gamelib.AlgoCore):
             # When parsing the frame data directly, 
             # 1 is integer for yourself, 2 is opponent (StarterKit code uses 0, 1 as player_index instead)
             if not unit_owner_self:
-                #gamelib.debug_write("Got scored on at: {}".format(location))
+                gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
-                #gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
+                gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
 
 if __name__ == "__main__":
